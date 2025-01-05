@@ -28,13 +28,12 @@ func (h *CustomHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 	case "/Read":
 		if r.Method == http.MethodGet {
-			t, _ := ReadID(1, l)
-			fmt.Fprintf(w, out(t))
+			ReadID(1, &l)
 		}
 
 	case "/ReadAll":
 		if r.Method == http.MethodGet {
-			ReadAll(l)
+			ReadAll(&l)
 		}
 
 	case "/Update":
@@ -81,8 +80,8 @@ func main() {
 	//Create(test, *l)
 	//ReadID(1, *l)
 	l := *log.Default()
-
-	StartAPi(":9090", l)
+	Delete(1, &l)
+	//StartAPi(":9090", l)
 
 }
 
@@ -100,7 +99,7 @@ type Task struct {
 }
 
 // CRUDS
-func Create(t Task, l log.Logger) error {
+func Create(t Task, l *log.Logger) error {
 	_, err := collection.InsertOne(context.TODO(), t)
 	if err != nil {
 		return err
@@ -109,7 +108,7 @@ func Create(t Task, l log.Logger) error {
 	return nil
 }
 
-func ReadID(ID int, l log.Logger) (Task, error) {
+func ReadID(ID int, l *log.Logger) (Task, error) {
 	var result Task
 	filter := bson.M{"id": ID}
 	err := collection.FindOne(context.TODO(), filter).Decode(&result)
@@ -120,7 +119,7 @@ func ReadID(ID int, l log.Logger) (Task, error) {
 	return result, nil
 }
 
-func ReadAll(l log.Logger) ([]Task, error) {
+func ReadAll(l *log.Logger) ([]Task, error) {
 	filter := bson.D{}
 	cursor, err := collection.Find(context.TODO(), filter)
 	if err != nil {
@@ -141,19 +140,41 @@ func ReadAll(l log.Logger) ([]Task, error) {
 	return tasks, nil
 }
 
-func Update(ID int, new Task, l log.Logger) (string, error) {
+func Update(ID int, new Task, l *log.Logger) (string, error) {
+	//old, err := ReadID(ID, l)
+	//if err != nil {
+	//	return "", err
+	//}
+	//
 	return "", nil
 }
 
-func Delete(ID int, l log.Logger) (string, error) {
+func Delete(ID int, l *log.Logger) (string, error) {
+	filter := bson.M{"id": ID}
+
+	// Perform the DeleteOne operation
+	deleteResult, err := collection.DeleteOne(context.TODO(), filter)
+	if err != nil {
+		l.Printf("Error deleting document with ID %d: %v", ID, err)
+		return "", err
+	}
+
+	// Check if any document was deleted
+	if deleteResult.DeletedCount == 0 {
+		l.Printf("No document found with ID %d to delete", ID)
+		return "", fmt.Errorf("no document found with ID %d", ID)
+	}
+
+	// Return success message
+	l.Printf("Successfully deleted document with ID %d", ID)
+	return "Document successfully deleted", nil
+}
+
+func DeleteAll(l *log.Logger) (string, error) {
 	return "", nil
 }
 
-func DeleteAll(l log.Logger) (string, error) {
-	return "", nil
-}
-
-func StartAPi(port string, l log.Logger) error {
+func StartAPi(port string, l *log.Logger) error {
 	// Create a custom handler
 	handler := &CustomHandler{}
 
