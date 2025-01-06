@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log"
 	"net/http"
+	"strconv"
 
 	"go.mongodb.org/mongo-driver/bson"
 	"go.mongodb.org/mongo-driver/mongo"
@@ -18,7 +19,7 @@ type CustomHandler struct{}
 
 func setCORS(w http.ResponseWriter) {
 	w.Header().Set("Access-Control-Allow-Origin", "*")
-	w.Header().Set("Access-Control-Allow-Methods", "POST, OPTIONS")
+	w.Header().Set("Access-Control-Allow-Methods", "*")
 	w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization")
 }
 
@@ -49,18 +50,33 @@ func (h *CustomHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 				json.NewEncoder(w).Encode(postReq{Error: err.Error()})
 			}
 			status, _ := Create(task, &l)
+			w.WriteHeader(http.StatusOK)
 			json.NewEncoder(w).Encode(postReq{Status: status})
 		}
 
 	case "/Read":
 		if r.Method == http.MethodGet {
 			l.Printf("%s : %s\n", r.Method, r.URL.Path)
-			var ID readReq
-			err := json.NewDecoder(r.Body).Decode(&ID)
-			if err != nil {
-				json.NewEncoder(w).Encode(postReq{Error: err.Error()})
+			// Read the ID from the query parameters instead of the body
+			idParam := r.URL.Query().Get("id")
+			if idParam == "" {
+				json.NewEncoder(w).Encode(postReq{Error: "ID is required"})
+				return
 			}
-			task, _, _ := ReadID(ID.ID, &l)
+
+			// Convert the ID to an integer
+			ID, err := strconv.Atoi(idParam)
+			if err != nil {
+				json.NewEncoder(w).Encode(postReq{Error: "Invalid ID format"})
+				return
+			}
+
+			task, _, _ := ReadID(ID, &l)
+			if isTaskEmpty(task) {
+				json.NewEncoder(w).Encode(postReq{Error: "Task not found"})
+				return
+			}
+			w.WriteHeader(http.StatusOK)
 			json.NewEncoder(w).Encode(task)
 		}
 
@@ -72,6 +88,7 @@ func (h *CustomHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			if err != nil {
 				json.NewEncoder(w).Encode(postReq{Error: err.Error()})
 			}
+			w.WriteHeader(http.StatusOK)
 			json.NewEncoder(w).Encode(readAllResult{Tasks: tasks})
 		}
 
@@ -87,24 +104,44 @@ func (h *CustomHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			if err != nil {
 				json.NewEncoder(w).Encode(postReq{Error: err.Error()})
 			}
+			w.WriteHeader(http.StatusOK)
 			json.NewEncoder(w).Encode(postReq{Status: status})
 		}
 
 	case "/Delete":
-		if r.Method == http.MethodDelete {
-			l.Printf("%s : %s\n", r.Method, r.URL.Path)
-			var ID readReq
-			err := json.NewDecoder(r.Body).Decode(&ID)
-			if err != nil {
-				json.NewEncoder(w).Encode(postReq{Error: err.Error()})
-			}
-			status, err := Delete(ID.ID, &l)
-			if err != nil {
-				json.NewEncoder(w).Encode(postReq{Error: err.Error()})
-			} else {
-				json.NewEncoder(w).Encode(postReq{Status: status})
-			}
+		if r.Method != http.MethodDelete {
+			http.Error(w, "Method Not Allowed", http.StatusMethodNotAllowed)
+			return
 		}
+
+		l.Printf("%s : %s\n", r.Method, r.URL.Path)
+
+		// Read the ID from the query parameters instead of the body
+		idParam := r.URL.Query().Get("id")
+		if idParam == "" {
+			w.WriteHeader(http.StatusBadRequest)
+			json.NewEncoder(w).Encode(postReq{Error: "ID is required"})
+			return
+		}
+
+		// Convert the ID to an integer
+		ID, err := strconv.Atoi(idParam)
+		if err != nil {
+			w.WriteHeader(http.StatusUnprocessableEntity)
+			json.NewEncoder(w).Encode(postReq{Error: "Invalid ID format"})
+			return
+		}
+
+		// Call the Delete function with the parsed ID
+		status, err := Delete(ID, &l)
+		if err != nil {
+			w.WriteHeader(http.StatusInternalServerError)
+			json.NewEncoder(w).Encode(postReq{Error: err.Error()})
+			return
+		}
+
+		w.WriteHeader(http.StatusOK)
+		json.NewEncoder(w).Encode(postReq{Status: status})
 
 	case "/DeleteAll":
 		if r.Method == http.MethodDelete {
@@ -113,6 +150,7 @@ func (h *CustomHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			if err != nil {
 				json.NewEncoder(w).Encode(postReq{Error: err.Error()})
 			}
+			w.WriteHeader(http.StatusOK)
 			json.NewEncoder(w).Encode(postReq{Status: status})
 		}
 

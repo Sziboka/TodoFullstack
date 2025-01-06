@@ -1,0 +1,244 @@
+openapi: 3.0.0
+info:
+  title: Task Management API
+  description: API to manage tasks (Create, Read, Update, Delete).
+  version: 1.0.0
+servers:
+  - url: http://localhost:9090
+paths:
+  /Create:
+    post:
+      summary: Create a new task
+      description: Creates a new task based on the input payload.
+      operationId: createTask
+      tags:
+        - Task
+      requestBody:
+        description: The task to be created.
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/Task'
+      responses:
+        '200':
+          description: Task creation status.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PostResponse'
+        '400':
+          description: Bad request, invalid input.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PostResponse'
+
+  /Read:
+    get:
+      summary: Fetch a task by ID
+      description: Retrieves a task based on the provided ID.
+      operationId: readTaskById
+      tags:
+        - Task
+      parameters:
+        - name: id
+          in: query
+          description: The ID of the task to fetch.
+          required: true
+          schema:
+            type: integer
+            example: 1
+      responses:
+        '200':
+          description: The task details.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Task'
+        '400':
+          description: Bad request, invalid ID provided.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PostResponse'
+        '404':
+          description: Task not found.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PostResponse'
+
+  /ReadAll:
+    get:
+      summary: Fetch all tasks
+      description: Retrieves all tasks from the database.
+      operationId: readAllTasks
+      tags:
+        - Task
+      responses:
+        '200':
+          description: List of all tasks.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ReadAllResponse'
+        '400':
+          description: Bad request, error fetching tasks.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PostResponse'
+
+  /Update:
+    post:
+      summary: Update an existing task
+      description: Updates a task with the new information.
+      operationId: updateTask
+      tags:
+        - Task
+      requestBody:
+        description: The updated task data.
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/Task'
+      responses:
+        '200':
+          description: Task update status.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PostResponse'
+        '400':
+          description: Bad request, invalid input.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PostResponse'
+
+  /Delete:
+    delete:
+      summary: Delete an item by ID
+      description: Deletes an item based on the provided ID.
+      tags:
+        - Task
+      parameters:
+        - in: query
+          name: id
+          schema:
+            type: integer
+          required: true
+          description: ID of the item to be deleted
+      responses:
+        '200':
+          description: Successful deletion
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  Status:
+                    type: string
+                    example: success
+        '400':
+          description: Bad request
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  Error:
+                    type: string
+                    example: ID is required
+        '422':
+          description: Unprocessable entity
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  Error:
+                    type: string
+                    example: Invalid ID format
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  Error:
+                    type: string
+                    example: Internal server error
+  /DeleteAll:
+    delete:
+      summary: Delete all tasks
+      description: Deletes all tasks from the database.
+      operationId: deleteAllTasks
+      tags:
+        - Task
+      responses:
+        '200':
+          description: Status of deleting all tasks.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PostResponse'
+        '400':
+          description: Error occurred while deleting tasks.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PostResponse'
+
+components:
+  schemas:
+    Task:
+      type: object
+      properties:
+        id:
+          type: integer
+          example: 1
+        name:
+          type: string
+          example: "Example Task"
+        context:
+          type: string
+          example: "Example Context"
+        ready:
+          type: boolean
+          example: true
+      required:
+        - name
+        - context
+        - ready
+
+    ReadRequest:
+      type: object
+      properties:
+        id:
+          type: integer
+          example: 1
+      required:
+        - id
+
+    PostResponse:
+      type: object
+      properties:
+        status:
+          type: string
+          example: "success"
+        error:
+          type: string
+          nullable: true
+          example: "Invalid input data"
+          
+    ReadAllResponse:
+      type: object
+      properties:
+        tasks:
+          type: array
+          items:
+            $ref: '#/components/schemas/Task'
