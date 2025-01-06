@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"log"
 	"net/http"
@@ -15,40 +16,104 @@ var collection mongo.Collection
 
 type CustomHandler struct{}
 
+func setCORS(w http.ResponseWriter) {
+	w.Header().Set("Access-Control-Allow-Origin", "*")
+	w.Header().Set("Access-Control-Allow-Methods", "POST, OPTIONS")
+	w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization")
+}
+
 func (h *CustomHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	setCORS(w)
 	l := *log.Default()
+
+	type postReq struct {
+		Status string `json:"status"`
+		Error  string `json:"error,omitempty"`
+	}
+
+	type readReq struct {
+		ID int `json:"id"`
+	}
+
+	type readAllResult struct {
+		Tasks []Task `json:"tasks"`
+	}
 
 	switch r.URL.Path {
 	case "/Create":
 		if r.Method == http.MethodPost {
-			fmt.Printf("Creating Task with the given req\n")
-		} else {
-			http.Error(w, "Not found", http.StatusNotFound)
+			l.Printf("%s : %s\n", r.Method, r.URL.Path)
+			var task Task
+			err := json.NewDecoder(r.Body).Decode(&task)
+			if err != nil {
+				json.NewEncoder(w).Encode(postReq{Error: err.Error()})
+			}
+			status, _ := Create(task, &l)
+			json.NewEncoder(w).Encode(postReq{Status: status})
 		}
 
 	case "/Read":
 		if r.Method == http.MethodGet {
-			ReadID(1, &l)
+			l.Printf("%s : %s\n", r.Method, r.URL.Path)
+			var ID readReq
+			err := json.NewDecoder(r.Body).Decode(&ID)
+			if err != nil {
+				json.NewEncoder(w).Encode(postReq{Error: err.Error()})
+			}
+			task, _, _ := ReadID(ID.ID, &l)
+			json.NewEncoder(w).Encode(task)
 		}
 
 	case "/ReadAll":
 		if r.Method == http.MethodGet {
-			ReadAll(&l)
+			l.Printf("%s : %s\n", r.Method, r.URL.Path)
+			var tasks []Task
+			tasks, err := ReadAll(&l)
+			if err != nil {
+				json.NewEncoder(w).Encode(postReq{Error: err.Error()})
+			}
+			json.NewEncoder(w).Encode(readAllResult{Tasks: tasks})
 		}
 
 	case "/Update":
 		if r.Method == http.MethodPost {
-			fmt.Printf("Updating the Task with the given id with the given data\n")
+			l.Printf("%s : %s\n", r.Method, r.URL.Path)
+			var newTask Task
+			err := json.NewDecoder(r.Body).Decode(&newTask)
+			if err != nil {
+				json.NewEncoder(w).Encode(postReq{Error: err.Error()})
+			}
+			status, err := Update(newTask, &l)
+			if err != nil {
+				json.NewEncoder(w).Encode(postReq{Error: err.Error()})
+			}
+			json.NewEncoder(w).Encode(postReq{Status: status})
 		}
 
 	case "/Delete":
-		if r.Method == http.MethodGet {
-			fmt.Printf("Deleting the Task with the given ID\n")
+		if r.Method == http.MethodDelete {
+			l.Printf("%s : %s\n", r.Method, r.URL.Path)
+			var ID readReq
+			err := json.NewDecoder(r.Body).Decode(&ID)
+			if err != nil {
+				json.NewEncoder(w).Encode(postReq{Error: err.Error()})
+			}
+			status, err := Delete(ID.ID, &l)
+			if err != nil {
+				json.NewEncoder(w).Encode(postReq{Error: err.Error()})
+			} else {
+				json.NewEncoder(w).Encode(postReq{Status: status})
+			}
 		}
 
 	case "/DeleteAll":
-		if r.Method == http.MethodGet {
-			fmt.Printf("Deleting all the Tasks\n")
+		if r.Method == http.MethodDelete {
+			l.Printf("%s : %s\n", r.Method, r.URL.Path)
+			status, err := DeleteAll(&l)
+			if err != nil {
+				json.NewEncoder(w).Encode(postReq{Error: err.Error()})
+			}
+			json.NewEncoder(w).Encode(postReq{Status: status})
 		}
 
 	default:
@@ -71,18 +136,8 @@ func main() {
 	db := client.Database("TaskDB")
 	collection = *db.Collection("TaskCollection")
 	fmt.Println("Using database:", db.Name(), "and collection:", collection.Name())
-	//test := Task{
-	//	ID:      1,
-	//	Name:    "testTask",
-	//	Context: "Creating a test task",
-	//	Ready:   true,
-	//}
-	//Create(test, *l)
-	//ReadID(1, *l)
 	l := *log.Default()
-	Delete(1, &l)
-	//StartAPi(":9090", l)
-
+	StartAPi(":9090", &l)
 }
 
 // FORM
@@ -92,31 +147,46 @@ func out(t Task) string {
 
 // STRUCT
 type Task struct {
-	ID      int    `bson:"id"`
-	Name    string `bson:"name"`
-	Context string `bson:"context"`
-	Ready   bool   `bson:"ready"`
+	ID      int    `bson:"id" json:"id"`
+	Name    string `bson:"name" json:"name"`
+	Context string `bson:"context" json:"context"`
+	Ready   bool   `bson:"ready" json:"ready"`
+}
+
+func isTaskEmpty(task Task) bool {
+	return task.ID == 0 && task.Name == "" && task.Context == "" && !task.Ready
 }
 
 // CRUDS
-func Create(t Task, l *log.Logger) error {
-	_, err := collection.InsertOne(context.TODO(), t)
-	if err != nil {
-		return err
+func Create(t Task, l *log.Logger) (string, error) {
+	_, _, err := ReadID(t.ID, l)
+	if err == nil {
+		return fmt.Sprintf("Item with given id of %d already exists", t.ID), err
+	} else {
+		_, err = collection.InsertOne(context.TODO(), t)
+		if err != nil {
+			return "Error while insert", err
+		}
+		if isTaskEmpty(t) {
+			l.Println("Error, empty Task")
+			return "", fmt.Errorf("error,empty task")
+		}
+		l.Printf("Task created with the following data:\n%s\n", out(t))
+		return fmt.Sprintf("Task created with the following id: %d", t.ID), nil
 	}
-	l.Printf("Task created with the following data:\n%s\n", out(t))
-	return nil
+
 }
 
-func ReadID(ID int, l *log.Logger) (Task, error) {
+func ReadID(ID int, l *log.Logger) (Task, string, error) {
 	var result Task
 	filter := bson.M{"id": ID}
 	err := collection.FindOne(context.TODO(), filter).Decode(&result)
 	if err != nil {
-		return Task{}, err
+		l.Printf("Cant read item with ID of %d\n", ID)
+		return Task{}, fmt.Sprintf("Cant read item with ID of %d", ID), err
 	}
 	l.Printf("Found Task with the given ID of %d\n%s\n", ID, out(result))
-	return result, nil
+	return result, fmt.Sprintf("Item Read with id of %d", ID), nil
 }
 
 func ReadAll(l *log.Logger) ([]Task, error) {
@@ -140,13 +210,35 @@ func ReadAll(l *log.Logger) ([]Task, error) {
 	return tasks, nil
 }
 
-func Update(ID int, new Task, l *log.Logger) (string, error) {
-	//old, err := ReadID(ID, l)
-	//if err != nil {
-	//	return "", err
-	//}
-	//
-	return "", nil
+//type Task struct {
+//	ID      int    `bson:"id"`
+//	Name    string `bson:"name"`
+//	Context string `bson:"context"`
+//	Ready   bool   `bson:"ready"`
+//}
+
+func Update(newTask Task, l *log.Logger) (string, error) {
+	// Define the filter and update
+	filter := bson.M{"id": newTask.ID}
+	update := bson.M{"$set": bson.M{
+		"name":    newTask.Name,
+		"context": newTask.Context,
+		"ready":   newTask.Ready,
+	}}
+
+	// Perform the update
+	result, err := collection.UpdateOne(context.TODO(), filter, update)
+	if err != nil {
+		l.Printf("Error updating task: %v\n", err)
+		return "", err
+	}
+
+	if result.MatchedCount == 0 {
+		return "", fmt.Errorf("no task found with ID %d", newTask.ID)
+	}
+	l.Printf("Task with the ID of %d is updated:\n%s", newTask.ID, out(newTask))
+
+	return fmt.Sprintf("Task with ID %d updated successfully", newTask.ID), nil
 }
 
 func Delete(ID int, l *log.Logger) (string, error) {
@@ -171,7 +263,13 @@ func Delete(ID int, l *log.Logger) (string, error) {
 }
 
 func DeleteAll(l *log.Logger) (string, error) {
-	return "", nil
+	_, err := collection.DeleteMany(context.TODO(), bson.M{})
+	if err != nil {
+		l.Println(err)
+		return "", err
+	}
+	l.Println("Collection deleted")
+	return "Collection deleted", nil
 }
 
 func StartAPi(port string, l *log.Logger) error {
